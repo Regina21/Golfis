@@ -1,75 +1,158 @@
+# TWINT - Twitter Intelligence Tool
+![2](https://i.imgur.com/iaH3s7z.png)
+![3](https://i.imgur.com/hVeCrqL.png)
 
-from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException
-from time import sleep
-import json
-import datetime
-# edit these three variables
-user = 'realdonaldtrump'
-start = datetime.datetime(2010, 1, 1)  # year, month, day
-end = datetime.datetime(2016, 12, 7)  # year, month, day
-# only edit these if you're having problems
-delay = 1  # time to wait on each page load before reading the page
-driver = webdriver.Safari()  # options are Chrome() Firefox() Safari()
-# don't mess with this stuff
-twitter_ids_filename = 'all_ids.json'
-days = (end - start).days + 1
-id_selector = '.time a.tweet-timestamp'
-tweet_selector = 'li.js-stream-item'
-user = user.lower()
-ids = []
-def format_day(date):
-    day = '0' + str(date.day) if len(str(date.day)) == 1 else str(date.day)
-    month = '0' + str(date.month) if len(str(date.month)) == 1 else str(date.month)
-    year = str(date.year)
-return '-'.join([year, month, day])
-def form_url(since, until):
-    p1 = 'https://twitter.com/search?f=tweets&vertical=default&q=from%3A'
-    p2 =  user + '%20since%3A' + since + '%20until%3A' + until + 'include%3Aretweets&src=typd'
-return p1 + p2
-def increment_day(date, i):
-return date + datetime.timedelta(days=i)
-for day in range(days):
-    d1 = format_day(increment_day(start, 0))
-    d2 = format_day(increment_day(start, 1))
-    url = form_url(d1, d2)
-print(url)
-print(d1)
-    driver.get(url)
-    sleep(delay)
-try:
-        found_tweets = driver.find_elements_by_css_selector(tweet_selector)
-        increment = 10
-while len(found_tweets) >= increment:
-print('scrolling down to load more tweets')
-            driver.execute_script('window.scrollTo(0, document.body.scrollHeight);')
-            sleep(delay)
-            found_tweets = driver.find_elements_by_css_selector(tweet_selector)
-            increment += 10
-print('{} tweets found, {} total'.format(len(found_tweets), len(ids)))
-for tweet in found_tweets:
-try:
-id = tweet.find_element_by_css_selector(id_selector).get_attribute('href').split('/')[-1]
-                ids.append(id)
-except StaleElementReferenceException as e:
-print('lost element reference', tweet)
-except NoSuchElementException:
-print('no tweets on this day')
-    start = increment_day(start, 1)
-try:
-with open(twitter_ids_filename) as f:
-        all_ids = ids + json.load(f)
-        data_to_write = list(set(all_ids))
-print('tweets found on this scrape: ', len(ids))
-print('total tweet count: ', len(data_to_write))
-except FileNotFoundError:
-with open(twitter_ids_filename, 'w') as f:
-        all_ids = ids
-        data_to_write = list(set(all_ids))
-print('tweets found on this scrape: ', len(ids))
-print('total tweet count: ', len(data_to_write))
-with open(twitter_ids_filename, 'w') as outfile:
-    json.dump(data_to_write, outfile)
-print('all done here')
-driver.close()
+[![PyPI](https://img.shields.io/pypi/v/twint.svg)](https://pypi.org/project/twint/) [![Build Status](https://travis-ci.org/haccer/twint.svg?branch=master)](https://travis-ci.org/haccer/twint/) [![Python 3.5|3.6](https://img.shields.io/badge/Python-3.5%2F3.6-blue.svg)](https://www.python.org/download/releases/3.0/) [![GitHub license](https://img.shields.io/github/license/haccer/tweep.svg)](https://github.com/haccer/tweep/blob/master/LICENSE) ![](https://img.shields.io/twitter/follow/twintproject.svg?label=Follow&style=social) 
+
+>No authentication. No API. No limits.
+
+Formerly known as Tweep, Twint is an advanced Twitter scraping tool written in Python that allows for scraping Tweets from Twitter profiles **without** using Twitter's API.
+
+Twint utilizes Twitter's search operators to let you scrape Tweets from specific users, scrape Tweets relating to certain topics, hashtags & trends, or sort out *sensitive* information from Tweets like e-mail and phone numbers. I find this very useful, and you can get really creative with it too.
+
+Twint also makes special queries to Twitter allowing you to also scrape a Twitter user's followers, Tweets a user has liked, and who they follow **without** any authentication, API, Selenium, or browser emulation.
+
+## tl;dr Benefits
+Some of the benefits of using Twint vs Twitter API:
+- Can fetch almost __all__ Tweets (Twitter API limits to last 3200 Tweets only)
+- Fast initial setup
+- Can be used anonymously and without Twitter sign up
+- **No rate limitations**
+
+## Requirements
+- Python 3.6
+
+## Installing
+
+**Git:**
+```bash
+git clone https://github.com/twintproject/twint.git
+pip3 install -r requirements.txt
+```
+
+**Pip:**
+```bash
+pip3 install --upgrade -e git+https://github.com/twintproject/twint.git@origin/master#egg=twint
+```
+
+**Pipenv**:
+```bash
+pipenv install -e git+https://github.com/twintproject/twint.git#egg=twint
+```
+
+## CLI Basic Examples and Combos
+A few simple examples to help you understand the basics:
+
+- `twint -u username` - Scrape all the Tweets from *user*'s timeline.
+- `twint -u username -s pineapple` - Scrape all Tweets from the *user*'s timeline containing _pineapple_.
+- `twint -s pineapple` - Collect every Tweet containing *pineapple* from everyone's Tweets.
+- `twint -u username --year 2014` - Collect Tweets that were tweeted **before** 2014.
+- `twint -u username --since 2015-12-20` - Collect Tweets that were tweeted since 2015-12-20.
+- `twint -u username -o file.txt` - Scrape Tweets and save to file.txt.
+- `twint -u username -o file.csv --csv` - Scrape Tweets and save as a csv file.
+- `twint -u username --email --phone` - Show Tweets that might have phone numbers or email addresses.
+- `twint -s "Donald Trump" --verified` - Display Tweets by verified users that Tweeted about Donald Trump.
+- `twint -g="48.880048,2.385939,1km" -o file.csv --csv` - Scrape Tweets from a radius of 1km around a place in Paris and export them to a csv file.
+- `twint -u username -es localhost:9200` - Output Tweets to Elasticsearch
+- `twint -u username -o file.json --json` - Scrape Tweets and save as a json file.
+- `twint -u username --database tweets.db` - Save Tweets to a SQLite database.
+- `twint -u username --followers` - Scrape a Twitter user's followers.
+- `twint -u username --following` - Scrape who a Twitter user follows.
+- `twint -u username --favorites` - Collect all the Tweets a user has favorited.
+- `twint -u username --following --user-full` - Collect full user information a person follows
+- `twint -u username --profile-full` - Use a slow, but effective method to gather Tweets from a user's profile (Gathers ~3200 Tweets, Including Retweets).
+- `twint -u username --retweets` - Use a quick method to gather the last 900 Tweets (that includes retweets) from a user's profile.
+- `twint -u username --resume 10940389583058` - Resume a search starting from the specified Tweet ID.
+
+More detail about the commands and options are located in the [wiki](https://github.com/twintproject/twint/wiki/Commands)
+
+## Module Example
+
+Twint can now be used as a module and supports custom formatting. **More details are located in the [wiki](https://github.com/twintproject/twint/wiki/Module)**
+
+```python
+import twint
+
+# Configure
+c = twint.Config()
+c.Username = "noneprivacy"
+c.Search = "#osint"
+c.Format = "Tweet id: {id} | Tweet: {tweet}"
+
+# Run
+twint.run.Search(c)
+```
+> Output
+
+`955511208597184512 2018-01-22 18:43:19 GMT <now> pineapples are the best fruit`
+
+```python
+import twint
+
+c = twint.Config()
+
+c.Username = "noneprivacy"
+c.Custom["tweet"] = ["id"]
+c.Custom["user"] = ["bio"]
+c.Limit = 10
+c.Store_csv = True
+c.Output = "none"
+
+twint.run.Search(c)
+```
+
+## Storing Options
+- Write to file
+- CSV
+- JSON
+- SQLite
+- Elasticsearch
+
+## Elasticsearch Setup
+
+Details on setting up Elasticsearch with Twint is located in the [wiki](https://github.com/twintproject/twint/wiki/Elasticsearch).
+
+## Graph Visualization
+![graph](https://i.imgur.com/EEJqB8n.png)
+
+[Graph](https://github.com/twintproject/twint/tree/master/graph) details are also located in the [wiki](https://github.com/twintproject/twint/wiki/Graph).
+
+We are developing a Twint Desktop App.
+
+![4](https://i.imgur.com/DzcfIgL.png)
+
+## FAQ
+> I tried scraping tweets from a user, I know that they exist but I'm not getting them
+
+Twitter can shadow-ban accounts, which means that their tweets will not be available via search. To solve this, pass `--profile-full` if you are using Twint via CLI or, if are using Twint as module, add `config.Profile_full = True`. Please note that this process will be quite slow.
+## More Examples
+
+#### Followers/Following
+
+> To get only follower usernames/following usernames
+
+`twint -u username --followers`
+
+`twint -u username --following`
+
+> To get user info of followers/following users
+
+`twint -u username --followers --user-full`
+
+`twint -u username --following --user-full`
+
+#### userlist
+
+> To get only user info of user
+
+`twint -u username --user-full`
+
+> To get user info of users from a userlist
+
+`twint --userlist inputlist --user-full`
+
+## Contact
+
+If you have any questions, want to join in on discussions, or need extra help, you are welcome to join our Twint focused [Slack server](https://join.slack.com/t/os-int/shared_invite/enQtNDI1MDA2OTg4MDg0LWUxYWNmMjI2MGFlMTZjZjhmOWY1ZTVhNmFiMDU2NzY1MzhiMDI2ZTZmYmEwY2MxY2YzMGFkZTY2MTcxZWI2ODM).
+
+If you are interested in OSINT and still seeking for help or suggestions, join the OSINT community at [OSINT Team](https://osint.team) (there is a specific Twint channel)
