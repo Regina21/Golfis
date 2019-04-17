@@ -1,0 +1,9 @@
+Getting Tweets from Users: 
+
+Run module "setup.py"
+Enter name of desired User into the file "automate.py" and then run the file
+
+Getting ATP rankings: 
+
+The following files can be used for scraping ATP rankings: functions.py // match_scores.py // match_stats.py
+
