@@ -13,10 +13,13 @@ which can be found in this repository.
 Getting posts from Instagram: 
 [@Elias Code von Instaloader auf diesen Repository hochladen + kurze Beschreibung]
 
+With this code multiple files from a user are downloaded into the local folder. In order to merge all files into one *.csv file, the code
 
 Getting ATP rankings: 
 
 For the ATP rankings the prepared *.csv files from the following repository were taken: https://github.com/JeffSackmann/tennis_atp
+
+[@Fabian: Dateien, welche gebraucht worden sind in dieses Repository einfügen]
 
 
 Getting WTP rankings: 
