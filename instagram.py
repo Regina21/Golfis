@@ -1,6 +1,7 @@
 import csv
 from pathlib import Path
 
+# change the name of the *.csv file to the name of the tennis user
 with open('big.csv', 'w', encoding='Latin-1') as out_file:
     csv_out = csv.writer(out_file)
     csv_out.writerow(['FileName', 'Content'])
