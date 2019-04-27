@@ -3,6 +3,7 @@ This document explains the approach to getting to the data, we used for our proj
 To get Tweets from Users:
 
 The initial code for scraping Tweets can be found on the Github Repository: https://github.com/twintproject/twint
+The Readme file offers an overview about the Github Repository twint. 
 For the purpose of this project, we modified the module "automate.py". To get the Tweets, run the following two modules, 
 which can be found in this repository.
 
