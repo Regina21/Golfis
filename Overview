@@ -13,7 +13,10 @@ which can be found in this repository.
 Getting posts from Instagram: 
 [@Elias Code von Instaloader auf diesen Repository hochladen + kurze Beschreibung]
 
-With this code multiple files from a user are downloaded into the local folder. In order to merge all files into one *.csv file, the code
+With this code multiple files from a user are downloaded into the local folder. In order to merge all files into one *.csv file, use the
+module "instagram.py". 
+(source: https://stackoverflow.com/questions/41913147/combine-a-folder-of-text-files-into-a-csv-with-each-content-in-a-cell)
+For each player an own *.csv file is created. The further processing of the files was done with R. 
 
 Getting ATP rankings: 
 
