@@ -1,11 +1,24 @@
-Getting Tweets from Users: 
+This document explains the approach to getting to the data, we used for our project. 
 
-Run module "setup.py"
-Enter name of desired users into the file "automate.py" and then run the file
+To get Tweets from Users:
+
+The initial code for scraping Tweets can be found on the Github Repository: https://github.com/twintproject/twint
+For the purpose of this project, we modified the module "automate.py". To get the Tweets, run the following two modules, 
+which can be found in this repository.
+
+1. Run module "setup.py"
+2. Run module "automate.py"
+
+
+Getting posts from Instagram: 
+[@Elias Code von Instaloader auf diesen Repository hochladen + kurze Beschreibung]
+
 
 Getting ATP rankings: 
 
-The following files can be used for scraping ATP rankings: functions.py // match_scores.py // match_stats.py
+For the ATP rankings the prepared *.csv files from the following repository were taken: https://github.com/JeffSackmann/tennis_atp
 
-Getting posts from Instagram: 
+
+Getting WTP rankings: 
+[@Fabian kurze Beschreibung einfügen)
 
