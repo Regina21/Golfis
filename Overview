@@ -19,13 +19,33 @@ module "instagram.py".
 (source: https://stackoverflow.com/questions/41913147/combine-a-folder-of-text-files-into-a-csv-with-each-content-in-a-cell)
 For each player an own *.csv file is created. The further processing of the files was done with R. 
 
+Tennisplayer selection Women and Men:
+
+The focus lies on the Top 10 in the world Players of both genders who are active on both social media channels (twitter and instagram). 
+
 Getting ATP rankings: 
 
 For the ATP rankings the prepared *.csv files from the following repository were taken: https://github.com/JeffSackmann/tennis_atp
+The focus lies on the Top 10 in the world men Players who are active on both social media channels (twitter and instagram).
+The chosen Top Menplayers are based on the ATP Ranking retrieved on the 29.03.2019. 
+on https://www.atptour.com/en/rankings/singles. The work focus on the single ranking. Due to inactivity regarding social media 
+men's number 3 does not make part of the sample (Alexander Zverev).
+The match statistics are retrieved from github https://github.com/JeffSackmann/tennis_atp, the csv. files are named 
+atp_matches_2018.csv and atp_matches_2017.csv. Further the data was adjusted and the First Serve % was calculated 
+for each match, filtered for each Top ten player.
 
-[@Fabian: Dateien, welche gebraucht worden sind in dieses Repository einfügen]
+[atp_matches_2018.csv and atp_matches_2017.csv]
 
 
-Getting WTP rankings: 
-[@Fabian kurze Beschreibung einfügen)
+Getting WTA rankings:
+For the ATP rankings the prepared *.csv files from the following repository were taken: https://github.com/JeffSackmann/tennis_wta
+The focus lies on the Top 10 in the world women Players who are active on both social media channels (twitter and instagram).
+The chosen Top Womenplayer are based on the WTA Ranking retrieved on the 24.04.2019. 
+on https://www.wtatennis.com/rankings. The work focus on the single ranking. Due to inactivity regarding social media 
+women's number 9 does not make part of the sample (Ashleigh Barty).
+The match statistics are retrieved from github https://github.com/JeffSackmann/tennis_wta, the csv. files are named 
+wta_matches_2018.csv and wta_matches_2017.csv. Further the dataset was adjusted and the First Serve % was calculated 
+for each match.
+
+[wta_matches_2018.csv and wta_matches_2017.csv.]
 
