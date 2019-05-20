@@ -12,7 +12,7 @@ which can be found in this repository.
 
 
 Getting posts from Instagram: 
-[@Elias Code von Instaloader auf diesen Repository hochladen + kurze Beschreibung]
+instaloader USERNAME [USERNAME] --post-filter="date_utc >= datetime(2017, 1, 1)"
 
 With this code multiple files from a user are downloaded into the local folder. In order to merge all files into one *.csv file, use the
 module "instagram.py". 
