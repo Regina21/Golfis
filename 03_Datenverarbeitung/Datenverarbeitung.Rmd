@@ -1,0 +1,810 @@
+---
+title: "Datenverarbeitung"
+author: "Regina Arocha, Elias Böni, Kevin Elliott, Manuela Huber, Fabian Schmid"
+date: "31 Mai 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Beschreibung
+In diesem Dokument werden die beschaffenen Daten weiter bearbeitet und ausgewertet. 
+
+## Twitter Daten
+### Vorbereitung
+Für die Ausführung von diesem Skript sollte man den Ordner "03_Datenverarbeitung" lokal speichern. 
+
+Die Spalte "tweets" vom Outputfile "twitter_complete_v1.xlsx", welches vom R-Skript "Datenbeschaffung" stammt, wurde anhand im Excel anhand der Formel *=GOOGLETRANSLATE(Posts;DETECTLANGUAGE(Posts);"en")* für die spätere Sentimentsanalyse übersetzt. Die Übersetzung wurde in einer neuen Spalte "tweets_English" eingefügt. 
+```{r warning=FALSE, message=FALSE}
+
+# Working Directory setzen (Speicherort vom Ordner)
+setwd("~/01_Master/023_Technology & Market Intelligence/04_Daten")
+
+# Daten einlesen
+library(readxl)
+twitter <- read_excel("twitter_complete_v2.xlsx")
+
+```
+
+In einem nächsten Schritt werden die Spalten und Zeilen entfernt, welche für unsere Analyse irrelevant sind: 
+
+```{r message=FALSE}
+library(plyr)
+
+# Spalte mit Anzahl characters hinzufügen - hierfür nehmen wir die Anzahl characters im originalen Tweet (also nicht im übersetzten Tweet)
+twitter$char = nchar(twitter$tweet, type="chars")
+
+# Überflüssige Spalten entfernen
+twitter$tweet = NULL # für unsere Sentimentsanalyse ist die Spalte "tweets_English" relevant
+twitter$mentions = NULL
+twitter$urls = NULL
+twitter$photos = NULL
+twitter$..1 = NULL
+
+# Schreibweise Name überprüfen
+unique(twitter$name)
+
+twitter$name <- gsub("NaomiOsakaå¤§å\u009d‚ã\u0081ªã\u0081Šã\u0081¿", "Naomi Osaka", twitter$name, 
+                     ignore.case = FALSE) # Naomi Osaka's Name bereinigen
+unique(twitter$name)
+
+# tweets entfernen vor 2017
+twitter = twitter[!grepl("2016", twitter$date),]
+
+# tweets entfernen von Ash Barty, da sie in den Social Media Kanälen nicht so aktiv ist
+twitter = twitter[!grepl("Ash Barty", twitter$name),]
+
+# Zusammenfassung der Anzahl Tweets pro Spieler
+table(twitter$name)
+```
+
+### Sentimentsanalyse Twitter Daten
+Es gibt unterschiedliche Methoden, um die Sentimentsanalyse durchzuführen. Je nach Methode werden die Sentimente der Tweets unterschiedlich bewertet. Im Skript "Sentimentanalyse_Roger_Federer_Test.R" wurden unterschiedliche Methoden mit einer Teilmenge des Twitterdatensatzes, nämlich mit den Tweets vom Roger Federer getestet. Nach einer stichprobenartige Überprüfung und aufgrund der Literaturrecherche wurde die *Option 3* vom Skript "Sentimentsanalyse_Roger_Federer_Test.R" ausgewählt und auf den gesamten Datensatz wie folgt angewandt: 
+
+```{r message= FALSE, warning=FALSE}
+# Benötigte Pakete
+library(syuzhet)
+library(tm)
+library(stringr)
+library(dplyr)
+library(tidytext)
+
+# Datenbereinigung
+twitter$tweet_English = gsub("[^A-Za-z]", " ", twitter$tweet_English) # Alphanumerische Wörter entfernen
+twitter$tweet_English = gsub("http\\w+", " ", twitter$tweet_English) # Http links entfernen
+twitter$tweet_English = gsub("@\\w+", " ", twitter$tweet_English) 
+twitter$tweet_English = tolower(twitter$tweet_English) # Grossbuchstaben in Kleinbuchstaben 
+twitter$tweet_English = removeWords(twitter$tweet_English, stopwords(kind="en")) # Stopwörter entfernen
+twitter$tweet_English = gsub("RT", " ", twitter$tweet_English)
+twitter$tweet_English = str_trim(twitter$tweet_English, side = c("left")) # Überflüssige Leerzeichen am Anfang entfernen
+twitter$tweet_English = str_trim(twitter$tweet_English, side = c("right")) # Ü berflüssige Leerzeichen am Schluss entfernen
+
+# Sentimentsanalyse 
+twitter$created_at = paste(twitter$date, twitter$time)
+
+tidy <- twitter %>%
+  select(created_at, username,tweet_English) %>%
+  unnest_tokens("words", tweet_English)
+
+sentiment_twitter <- (get_sentiment(tidy$words, method="afinn", language = "english")) # Dictionary afinn
+tidy$sentiment = sentiment_twitter
+summary(tidy$sentiment)
+
+tidy_list = tidy %>% group_by(created_at, username) %>% summarise(sentiment_mean=mean(sentiment))
+twitter = merge(x=twitter, y=tidy_list[,c("created_at", "username", "sentiment_mean")], by=c("created_at","username"), all.x=TRUE)
+
+# Anzahl posts pro Spieler
+twitter_count <- as.data.frame(table(twitter$username))
+write.csv(twitter, file="twitter_tableau.csv") # für Tableau exportieren
+```
+Die Sentimente werden auf einer Skala von -5 bis 5 bewertet. Im Durchschnitt sind die Tweets positiv. 
+
+## Instagram Daten
+Für die Instagram Daten wird derselbe Vorgang wie mit den Twitterdaten angewandt. Auch hierfür wird die Datei "instagram_complete_v2.xlsx" verwendet, da die Instagram Posts ebenfalls mit Excel übersetzt und in einer neuen Spalten eingefügt worden sind. 
+
+### Vorbereitung
+```{r message=FALSE}
+# Daten einlesen
+instagram <- read_excel("instagram_complete_v2.xlsx")
+```
+
+Beim Export der Instagram Daten im Skript "Datenbeschaffung.Rmd" wurde die Datumsspalte falsch ausgeschrieben. Das liegt an einem Einstellungsfehler der library WriteXLS. Da dieser Fehler nicht vorkommt, wenn eine *.csv Datei exportiert wird, wurde im Skript "Datenbeschaffung.Rmd" die Datei "import.list.csv" exportiert. Damit die richtigen Datumsdaten für unsere Analyse verwendet werden, ergänzen wir die richtigen Datumsdaten der Datei "import.list.csv" in die instagram Datei. 
+```{r}
+# Daten einlesen
+import.list <- read.csv("import.list.csv", stringsAsFactors = FALSE)
+
+# Beachte die Spalte "date.2" der Datei "import.list" und die Spalte "date" der Datei "instagram" enthalten die gleichen Daten. Dies dient als Grundlage für die Zusammenführung der Daten
+instagram = merge(x=instagram, y = import.list[,c("date.1", "date.2")], by.x = "date", by.y = "date.2", 
+                  all.x=TRUE)
+
+
+# Überflüssige Spalten entfernen
+instagram$..1 = NULL
+
+# Instagram posts nach 2019 entfernen
+instagram = instagram[!grepl("2019", instagram$date.1),]
+instagram = instagram[!grepl("karenkhachanov", instagram$player),] # diese Playerin berücksichtigen wir nicht in der Analyse
+
+# Anzahl instagram posts pro Person
+table(instagram$player)
+```
+
+### Sentimentsanalyse
+```{r}
+# Datenbereinigung
+instagram$Post_English = gsub("[^A-Za-z]", " ", instagram$Post_English) # Alphanumerische Wörter entfernen
+instagram$Post_English = gsub("http\\w+", " ", instagram$Post_English) # Http links entfernen
+instagram$Post_English = gsub("@\\w+", " ", instagram$Post_English) 
+instagram$Post_English = tolower(instagram$Post_English) # Grossbuchstaben in Kleinbuchstaben 
+instagram$Post_English = removeWords(instagram$Post_English, stopwords(kind="en")) # Stopwörter entfernen
+instagram$Post_English = gsub("RT", " ", instagram$Post_English)
+instagram$Post_English = str_trim(instagram$Post_English, side = c("left")) # Überflüssige Leerzeichen vor dem Text entfernen 
+instagram$Post_English = str_trim(instagram$Post_English, side = c("right")) # Überflüssige Leerzeichen nach dem Text entfernen
+
+# Sentimentsanalyse
+instagram$created_at = paste(instagram$date.1, instagram$date)
+
+tidy <- instagram %>%
+  select(created_at, player, Post_English) %>%
+  unnest_tokens("words", Post_English)
+
+sentiment_instagram <- (get_sentiment(tidy$words, method="afinn", language = "english"))
+tidy$sentiment = sentiment_instagram
+tidy_list = tidy %>% group_by(created_at,player) %>% summarise(sentiment_mean=mean(sentiment))
+instagram = merge(x=instagram, y=tidy_list[,c("created_at", "player", "sentiment_mean")], by=c("created_at","player"), all.x=TRUE)
+summary(tidy$sentiment)
+
+instagram_count <- as.data.frame(table(instagram$player))
+write.csv(instagram_count, file = "instagram_count.csv")
+```
+
+Im Durchschnitt sind die Instagram Posts positiv. 
+
+## Twitter und Instagram Daten zusammenführen
+Damit die Twitter und die Instagram Daten miteinander kombiniert werden können, müssen die Namen der Tennisspieler(-innen) in jeder Datei gleich geschrieben werden. Dies ist momentan nicht der Fall. Die untenstehende Zeilen beschreiben den Vorgang, um die Namen zu vereinheitlichen. 
+```{r}
+# Dieses zusätzliche File enthält die verschiedene Schreibweisen nach Quelle
+Name <- read_excel("Tennis_Twitter_Instagram.xlsx", sheet="Used")
+
+# Spalte in Twitter Datei hinzufügen mit dem Namen
+twitter <- merge(x=twitter, y= Name[,c("Name","Twitter")], by.x= "username", by.y = "Twitter", all.x = TRUE)
+
+# Spalte in Instagram Datei hinzufügen mit dem Namen
+instagram <- merge(x = instagram, y = Name[,c("Name", "Instagram")], by.x = "player", by.y = "Instagram", all.x =  TRUE)
+
+# Nur die relevanten Spalten behalten
+instagram$date = NULL
+instagram$player = NULL
+twitter$name = NULL # wir benötigen nur noch die Spalte mit "Name"
+twitter$username = NULL # wir benötigen nur noch die Spalte mit "Name"
+
+# Twitter mit Instagram Daten kombinieren
+social_media = merge(twitter, instagram, by.x =c("date", "Name"), by.y=c("date.1", "Name"), all = TRUE )
+
+# Spalten umbenennen
+colnames(social_media)[which(names(social_media) == "sentiment_mean.x")] <- "sentiment_twitter"
+colnames(social_media)[which(names(social_media) == "sentiment_mean.y")] <- "sentiment_instagram"
+
+# Duplikate entfernen
+social_media = social_media[!duplicated(social_media[,c("created_at.x", "created_at.y")]),]
+
+# Spalte hinzufügen mit dem Durchschnitt von Twitter und Instagram Sentiment
+social_media$sentiment_mean = rowMeans(social_media[c("sentiment_twitter", "sentiment_instagram")], na.rm=TRUE)
+
+# Zeilen zusammenführen, sodass wir pro Tag und Spieler eine Zeile haben
+sentiments_twitter = social_media %>% # Twitter Sentimente
+  group_by(date, Name) %>%
+  summarize(sentiment_twitter = mean(sentiment_twitter, na.rm = TRUE))
+
+sentiments_instagram = social_media %>% # Instagram Sentimente
+  group_by(date, Name) %>%
+  summarize(sentiment_instagram = mean(sentiment_instagram, na.rm = TRUE))
+
+sentiments_all = social_media %>% # Social Media Allgemein Sentimente
+  group_by(date, Name) %>%
+  summarize(sentiment_mean = mean(sentiment_mean, na.rm = TRUE))
+
+sentiments_all = merge(x = sentiments_all, y = sentiments_twitter, by=c("date", "Name"), all.x = TRUE)
+sentiments_all = merge(x = sentiments_all, y = sentiments_instagram, by=c("date", "Name"), all.x = TRUE)
+                                                  
+
+```
+
+## ATP Daten
+Die Files von ATP wurden aus dem Github Repository von Jeff Sackmann(Quelle einfügen) entnommen. Jedoch enthält diese Datei keine Match-Datumsdaten. Es ist lediglich das Startdatum vom Tournament ersichtlich. 
+Je nach "draw_size", also Anzahl Teilnehmer ist die Länge des Tournaments unterschiedlich lang. Um eine Annäherung der Match-Datumsdaten zu erhalten, wurden einige Annahmen getroffen (siehe Abschnitt xx im Worddokument xx). Basierend auf diesen Annahmen, wurden einige Regeln definiert, um die Match-Datumsdaten in den Datensatz hinzuzufügen. 
+Für die weitere Verarbeitung der ATP Daten wurde die Excel-Datei nach "tourney_id" und dann nach "match_num" sortiert. Zusätzlich wurden weitere Spalten (Spalte G, H, I, J, AL & AV) manuell hinzugefügt. 
+
+Zuerst werden die Match-Datumsdaten vom 2017 ergänzt:
+
+```{r message=FALSE}
+# Daten für 2017
+  # Daten einlesen
+  atp_2017 <- read_xlsx("tennis_atp_2017.xlsx", range = "A1:BC2887") 
+# es ist wichtig, dass die Excel Daten nach "tourney_id" und dann nach "match_num" aufsteigend sortiert sind
+
+  atp_2017 = as.data.frame(atp_2017)
+  
+  # Überflüssige Spalten entfernen
+  atp_2017$..7 = NULL
+  atp_2017$..8 = NULL
+  atp_2017$..9 = NULL
+  atp_2017$winner_seed = NULL
+  atp_2017$winner_entry = NULL
+  atp_2017$loser_seed = NULL
+  atp_2017$loser_entry = NULL
+  
+  unique_id <- unique(atp_2017$tourney_id) # Vektor erstellen
+  atp_2017$match_dat <- rep(NA, dim(atp_2017)[1]) # Platzhalter für das tatsächliche Match_Datum
+  atp_2017$seq <- rep(0, dim(atp_2017)[1])
+  
+  # Regeln definieren
+  rules.127 <- cbind(c(1, 23, 44, 65, 81, 97, 105, 113, 117, 121, 123, 125, 127),
+                     c(0,  1,  2,  3,  4,  5,   6,   7,   8,   9,  10,  12,  14))
+  
+  rules.55 = cbind(c(1,4,14,29,41,49,53,55),
+                   c(0,1,2,3,4,5,6,7))
+  
+  rules.31 = cbind(c(1,8,16,20,25,29,31),
+                   c(0,1,2,3,4,5,6))
+  
+  rules.7 = cbind(c(1,3,5,7,9,11,13,15),
+                  c(0,1,2,3,4,5,6,7))
+  
+  rules.3 = cbind(c(1,3), 
+                  c(0,2))
+  
+# zunächst wird jeder Match nummeriert. Dies dient als Basis für das Hiinzufügen der Match-Datumsdaten
+  sequences <- NULL
+  
+  atp_2017$tourney_date <- as.Date(as.POSIXct(as.character(atp_2017$tourney_date), format = "%Y%m%d"))
+  
+  for (i in 1:length(unique_id)) {
+    sequences <- c(sequences, 1:sum(atp_2017$tourney_id == unique_id[i]))
+  }
+  
+  atp_2017$seq <- sequences
+  
+  for (i in 1:dim(atp_2017)[1]) {
+    if (atp_2017$draw_size[i] == 128) {
+      atp_2017$match_dat[i] <- atp_2017$tourney_date[i] + rules.127[findInterval(atp_2017$seq[i], rules.127[, 1]), 2]
+    }
+    if (atp_2017$draw_size[i] ==64) {
+      atp_2017$match_dat[i] <- atp_2017$tourney_date[i] + rules.55[findInterval(atp_2017$seq[i], rules.55[, 1]), 2]
+    }
+     if (atp_2017$draw_size[i] == 32) {
+      atp_2017$match_dat[i] <- atp_2017$tourney_date[i] + rules.31[findInterval(atp_2017$seq[i], rules.31[, 1]), 2]
+     }
+     if (atp_2017$draw_size[i] == 8) {
+      atp_2017$match_dat[i] <- atp_2017$tourney_date[i] + rules.7[findInterval(atp_2017$seq[i], rules.7[, 1]), 2]
+     }
+     if (atp_2017$draw_size[i] == 4) {
+      atp_2017$match_dat[i] <- atp_2017$tourney_date[i] + rules.3[findInterval(atp_2017$seq[i], rules.3[, 1]), 2]
+    }
+  }
+  
+atp_2017$help = (atp_2017$match_dat) - as.numeric(atp_2017$tourney_date)
+atp_2017$match_dat = as.Date(atp_2017$help, origin = atp_2017$tourney_date)
+atp_2017$help = NULL
+```
+
+Der Vorgang für die Daten vom 2018 ist analog zum Vorgang der Daten für 2017: 
+```{r message = FALSE}
+# Daten für 2018
+  # Daten einlesen
+  atp_2018 <- read_xlsx("tennis_atp_2018.xlsx", range = "A1:BC2887") 
+# es ist wichtig, dass die Excel Daten nach "tourney_id" und dann nach "match_num" aufsteigend sortiert sind
+
+  atp_2018 = as.data.frame(atp_2018)
+  
+  # Überflüssige Spalten entfernen
+  atp_2018$..52 = NULL
+  atp_2018$..53 = NULL
+  atp_2018$..54 = NULL
+  atp_2018$..55 = NULL
+  atp_2018$winner_seed = NULL
+  atp_2018$winner_entry = NULL
+  atp_2018$loser_seed = NULL
+  atp_2018$loser_entry = NULL
+  
+  # NA in tourney id entfernen
+  atp_2018 = atp_2018[!is.na(atp_2018$tourney_id),]
+  
+  unique_id <- unique(atp_2018$tourney_id) # Vektor erstellen
+  atp_2018$match_dat <- rep(NA, dim(atp_2018)[1]) # Platzhalter für das tatsächliche Match_Datum
+  atp_2018$seq <- rep(0, dim(atp_2018)[1])
+  
+  # Regeln definieren
+  rules.127 <- cbind(c(1, 23, 44, 65, 81, 97, 105, 113, 117, 121, 123, 125, 127),
+                     c(0,  1,  2,  3,  4,  5,   6,   7,   8,   9,  10,  12,  14))
+  
+  rules.55 = cbind(c(1,4,14,29,41,49,53,55),
+                   c(0,1,2,3,4,5,6,7))
+  
+  rules.31 = cbind(c(1,8,16,20,25,29,31),
+                   c(0,1,2,3,4,5,6))
+  
+  rules.7 = cbind(c(1,3,5,7,9,11,13,15),
+                  c(0,1,2,3,4,5,6,7))
+  
+  rules.3 = cbind(c(1,3), 
+                  c(0,2))
+  
+# zunächst wird jeder Match nummeriert. Dies dient als Basis für das Hiinzufügen der Match-Datumsdaten
+  sequences <- NULL
+  
+  for (i in 1:length(unique_id)) {
+    sequences <- c(sequences, 1:sum(atp_2018$tourney_id == unique_id[i]))
+  }
+  
+  atp_2018$seq <- sequences
+  
+  atp_2018$tourney_date <- as.Date(as.POSIXct(as.character(atp_2018$tourney_date), format = "%Y%m%d"))
+  
+  for (i in 1:dim(atp_2018)[1]) {
+    if (atp_2018$draw_size[i] == 128) {
+      atp_2018$match_dat[i] <- atp_2018$tourney_date[i] + rules.127[findInterval(atp_2018$seq[i], rules.127[, 1]), 2]
+    }
+    if (atp_2018$draw_size[i] ==64) {
+      atp_2018$match_dat[i] <- atp_2018$tourney_date[i] + rules.55[findInterval(atp_2018$seq[i], rules.55[, 1]), 2]
+    }
+     if (atp_2018$draw_size[i] == 32) {
+      atp_2018$match_dat[i] <- atp_2018$tourney_date[i] + rules.31[findInterval(atp_2018$seq[i], rules.31[, 1]), 2]
+     }
+     if (atp_2018$draw_size[i] == 8) {
+      atp_2018$match_dat[i] <- atp_2018$tourney_date[i] + rules.7[findInterval(atp_2018$seq[i], rules.7[, 1]), 2]
+     }
+     if (atp_2018$draw_size[i] == 4) {
+      atp_2018$match_dat[i] <- atp_2018$tourney_date[i] + rules.3[findInterval(atp_2018$seq[i], rules.3[, 1]), 2]
+    }
+  }
+ 
+# Die Spalte match_dat ist numerisch und wird mit den nachfolgenden Zeilen in einen Datumsformat transfomiert  
+atp_2018$help = (atp_2018$match_dat) - as.numeric(atp_2018$tourney_date)
+atp_2018$match_dat = as.Date(atp_2018$help, origin = atp_2018$tourney_date)
+atp_2018$help = NULL
+
+```
+
+Nun werden beide Datensätze miteinander verbunden und die nicht notwendigen Zeilen entfernt. Das heisst, wenn am Match einer der Top Spieler nicht gespielt hat, dann wird diese Zeile entfernt. 
+```{r}
+
+# atp_2017 hat eine Spalte mehr, diese wird zuerst entfernt
+atp_2017$tournament_StartDate = NULL
+
+atp_total = rbind (atp_2017,atp_2018)
+# Top Spieler
+key <- c("Novak Djokovic", "Rafael Nadal", "Dominic Thiem", "Roger Federer", "Kei Nishikori", 
+                            "Kevin Anderson", "Juan Martin del Potro", "John Isner", "Stefano Tsitsipas", 
+                            "Marin Cilic")
+
+atp_total <- atp_total[(atp_total$winner_name %in% key + atp_total$loser_name %in% key) > 0, ]
+
+atp_total = merge(atp_total, sentiments_all, by.x= c("winner_name", "match_dat"), by.y = c("Name", "date"), all=TRUE )
+atp_total = merge(atp_total, sentiments_all, by.x= c("loser_name", "match_dat"), by.y = c("Name", "date"), all.x=TRUE )
+colnames(atp_total)[which(names(atp_total) == "sentiment_mean.x")] <- "sentiment_mean.winner"
+colnames(atp_total)[which(names(atp_total) == "sentiment_twitter.x")] <- "sentiment_twitter.winner"
+colnames(atp_total)[which(names(atp_total) == "sentiment_instagram.x")] <- "sentiment_instagram.winner"
+colnames(atp_total)[which(names(atp_total) == "sentiment_mean.y")] <- "sentiment_mean.loser"
+colnames(atp_total)[which(names(atp_total) == "sentiment_twitter.y")] <- "sentiment_twitter.loser"
+colnames(atp_total)[which(names(atp_total) == "sentiment_instagram.y")] <- "sentiment_instagram.loser"
+```
+
+## WTA Daten
+Der Vorgang ist analog für die WTA_Daten 2017: 
+```{r message=FALSE}
+# Daten für 2017
+  # Daten einlesen
+  wta_2017 <- read_xlsx("tennis_wta_2017.xlsx", range = "A1:BC2887") 
+# es ist wichtig, dass die Excel Daten nach "tourney_id" und dann nach "match_num" aufsteigend sortiert sind
+
+  wta_2017 = as.data.frame(wta_2017)
+  
+  # Überflüssige Spalten entfernen
+  wta_2017$..7 = NULL
+  wta_2017$..8 = NULL
+  wta_2017$..9 = NULL
+  wta_2017$winner_seed = NULL
+  wta_2017$winner_entry = NULL
+  wta_2017$loser_seed = NULL
+  wta_2017$loser_entry = NULL
+  
+  # NA in tourney id entfernen
+  wta_2017 = wta_2017[!is.na(wta_2017$tourney_id),]
+  
+  unique_id <- unique(wta_2017$tourney_id) # Vektor erstellen
+  wta_2017$match_dat <- rep(NA, dim(wta_2017)[1]) # das tatsächliche Match_Datum
+  wta_2017$seq <- rep(0, dim(wta_2017)[1])
+  
+  # Regeln definieren
+  rules.127 <- cbind(c(1, 23, 44, 65, 81, 97, 105, 113, 117, 121, 123, 125, 127),
+                     c(0,  1,  2,  3,  4,  5,   6,   7,   8,   9,  10,  12,  14))
+  
+  rules.55 = cbind(c(1,4,14,29,41,49,53,55),
+                   c(0,1,2,3,4,5,6,7))
+  
+  rules.31 = cbind(c(1,8,16,20,25,29,31),
+                   c(0,1,2,3,4,5,6))
+  
+  rules.7 = cbind(c(1,3,5,7,9,11,13,15),
+                  c(0,1,2,3,4,5,6,7))
+  
+  rules.3 = cbind(c(1,3), 
+                  c(0,2))
+  
+# zunächst wird jeder Match nummeriert. Dies dient als Basis für das Hiinzufügen der Match-Datumsdaten
+  sequences <- NULL
+  
+  wta_2017$tourney_date <- as.Date(as.POSIXct(as.character(wta_2017$tourney_date), format = "%Y%m%d"))
+  
+  for (i in 1:length(unique_id)) {
+    sequences <- c(sequences, 1:sum(wta_2017$tourney_id == unique_id[i]))
+  }
+  
+  wta_2017$seq <- sequences
+  
+  for (i in 1:dim(wta_2017)[1]) {
+    if (wta_2017$draw_size[i] == 128) {
+      wta_2017$match_dat[i] <- wta_2017$tourney_date[i] + rules.127[findInterval(wta_2017$seq[i], rules.127[, 1]), 2]
+    }
+    if (wta_2017$draw_size[i] ==64) {
+      wta_2017$match_dat[i] <- wta_2017$tourney_date[i] + rules.55[findInterval(wta_2017$seq[i], rules.55[, 1]), 2]
+    }
+     if (wta_2017$draw_size[i] == 32) {
+      wta_2017$match_dat[i] <- wta_2017$tourney_date[i] + rules.31[findInterval(wta_2017$seq[i], rules.31[, 1]), 2]
+     }
+     if (wta_2017$draw_size[i] == 8) {
+      wta_2017$match_dat[i] <- wta_2017$tourney_date[i] + rules.7[findInterval(wta_2017$seq[i], rules.7[, 1]), 2]
+     }
+     if (wta_2017$draw_size[i] == 4) {
+      wta_2017$match_dat[i] <- wta_2017$tourney_date[i] + rules.3[findInterval(wta_2017$seq[i], rules.3[, 1]), 2]
+    }
+  }
+ 
+# Die Spalte match_dat ist numerisch und wird mit den nachfolgenden Zeilen in einen Datumsformat transfomiert  
+wta_2017$help = (wta_2017$match_dat) - as.numeric(wta_2017$tourney_date)
+wta_2017$match_dat = as.Date(wta_2017$help, origin = wta_2017$tourney_date)
+wta_2017$help = NULL
+
+```
+
+Der Vorgang für die WTA_Daten 2018 ist analog: 
+```{r message=FALSE}
+# Daten für 2018
+  # Daten einlesen
+  wta_2018 <- read_xlsx("tennis_wta_2018.xlsx", range = "A1:BC2887") 
+# es ist wichtig, dass die Excel Daten nach "tourney_id" und dann nach "match_num" aufsteigend sortiert sind
+
+  wta_2018 = as.data.frame(wta_2018)
+  
+  # Überflüssige Spalten entfernen
+  wta_2018$..7 = NULL
+  wta_2018$..8 = NULL
+  wta_2018$..9 = NULL
+  wta_2018$winner_seed = NULL
+  wta_2018$winner_entry = NULL
+  wta_2018$loser_seed = NULL
+  wta_2018$loser_entry = NULL
+
+  # NA in tourney id entfernen
+  wta_2018 = wta_2018[!is.na(wta_2018$tourney_id),]
+  
+  unique_id <- unique(wta_2018$tourney_id) # Vektor erstellen
+  wta_2018$match_dat <- rep(NA, dim(wta_2018)[1]) # das tatsächliche Match_Datum
+  wta_2018$seq <- rep(0, dim(wta_2018)[1])
+  
+  # Regeln definieren
+  rules.127 <- cbind(c(1, 23, 44, 65, 81, 97, 105, 113, 117, 121, 123, 125, 127),
+                     c(0,  1,  2,  3,  4,  5,   6,   7,   8,   9,  10,  12,  14))
+  
+  rules.55 = cbind(c(1,4,14,29,41,49,53,55),
+                   c(0,1,2,3,4,5,6,7))
+  
+  rules.31 = cbind(c(1,8,16,20,25,29,31),
+                   c(0,1,2,3,4,5,6))
+  
+  rules.7 = cbind(c(1,3,5,7,9,11,13,15),
+                  c(0,1,2,3,4,5,6,7))
+  
+  rules.3 = cbind(c(1,3), 
+                  c(0,2))
+  
+# zunächst wird jeder Match nummeriert. Dies dient als Basis für das Hiinzufügen der Match-Datumsdaten
+  sequences <- NULL
+  
+  wta_2018$tourney_date <- as.Date(as.POSIXct(as.character(wta_2018$tourney_date), format = "%Y%m%d"))
+  
+  for (i in 1:length(unique_id)) {
+    sequences <- c(sequences, 1:sum(wta_2018$tourney_id == unique_id[i]))
+  }
+  
+  wta_2018$seq <- sequences
+  
+  for (i in 1:dim(wta_2018)[1]) {
+    if (wta_2018$draw_size[i] == 128) {
+      wta_2018$match_dat[i] <- wta_2018$tourney_date[i] + rules.127[findInterval(wta_2018$seq[i], rules.127[, 1]), 2]
+    }
+    if (wta_2018$draw_size[i] ==64) {
+      wta_2018$match_dat[i] <- wta_2018$tourney_date[i] + rules.55[findInterval(wta_2018$seq[i], rules.55[, 1]), 2]
+    }
+     if (wta_2018$draw_size[i] == 32) {
+      wta_2018$match_dat[i] <- wta_2018$tourney_date[i] + rules.31[findInterval(wta_2018$seq[i], rules.31[, 1]), 2]
+     }
+     if (wta_2018$draw_size[i] == 8) {
+      wta_2018$match_dat[i] <- wta_2018$tourney_date[i] + rules.7[findInterval(wta_2018$seq[i], rules.7[, 1]), 2]
+     }
+     if (wta_2018$draw_size[i] == 4) {
+      wta_2018$match_dat[i] <- wta_2018$tourney_date[i] + rules.3[findInterval(wta_2018$seq[i], rules.3[, 1]), 2]
+    }
+  }
+
+# Die Spalte match_dat ist numerisch und wird mit den nachfolgenden Zeilen in einen Datumsformat transfomiert  
+wta_2018$help = (wta_2018$match_dat) - as.numeric(wta_2018$tourney_date)
+wta_2018$match_dat = as.Date(wta_2018$help, origin = wta_2018$tourney_date)
+wta_2018$help = NULL
+```
+ 
+Nun werden beide Datensätze miteinander verbunden: 
+```{r warning=FALSE}
+# Da die Schreibweise dieser Spalte unterschiedlich ist und die Spalte nicht gebraucht wird, wird diese vom Datensatz entfernt
+wta_2017$Tournament_Startdate = NULL
+wta_2018$Tournament_StartDate = NULL
+
+wta_total = rbind (wta_2017,wta_2018)
+
+# Top Spielerinnen
+key <- c("Naomi Osaka", "Simona Halep", "Petra Kvitova", "Karolina Pliskova", "Angelique Kerber", "Elina Svitolina", "Kiki Bertens", "Sloane Stephens", "Aryna Sabalenka", "Serena Williams")
+
+wta_total <- wta_total[(wta_total$winner_name %in% key + wta_total$loser_name %in% key) > 0, ]
+
+wta_total = merge(wta_total, sentiments_all, by.x= c("winner_name", "match_dat"), by.y = c("Name", "date"), all=TRUE )
+wta_total = merge(wta_total, sentiments_all, by.x= c("loser_name", "match_dat"), by.y = c("Name", "date"), all.x=TRUE )
+colnames(wta_total)[which(names(wta_total) == "sentiment_mean.x")] <- "sentiment_mean.winner"
+colnames(wta_total)[which(names(wta_total) == "sentiment_twitter.x")] <- "sentiment_twitter.winner"
+colnames(wta_total)[which(names(wta_total) == "sentiment_instagram.x")] <- "sentiment_instagram.winner"
+colnames(wta_total)[which(names(wta_total) == "sentiment_mean.y")] <- "sentiment_mean.loser"
+colnames(wta_total)[which(names(wta_total) == "sentiment_twitter.y")] <- "sentiment_twitter.loser"
+colnames(wta_total)[which(names(wta_total) == "sentiment_instagram.y")] <- "sentiment_instagram.loser"
+
+```
+
+```{r}
+
+# Gesamtes File exportieren für Tableau
+write.csv(atp_total, file = "atp_total.csv")
+write.csv(wta_total, file = "wta_total.csv")
+```
+
+## Regressionen erstellen
+### ATP
+Der Datensatz für die Regression Sentiment vom Gewinner auf Gewinner, bereiten wir zuerst vor. 
+```{r warning=FALSE, message=FALSE}
+# nur relevante Spalten in neue Tabelle kopieren
+atp_regression <- atp_total[, c(1, 2, 3, 9, 31, 41, 50, 51, 52, 53, 54, 55)]
+players = unique(atp_regression$winner_name)
+
+# Spalten umbenennen
+colnames(atp_regression)[which(names(atp_regression) == "sentiment_mean.winner")] <- "sent_mean_win_today"
+colnames(atp_regression)[which(names(atp_regression) == "sentiment_twitter.winner")] <- "sent_tweet_win_today"
+colnames(atp_regression)[which(names(atp_regression) == "sentiment_instagram.winner")] <- "sent_insta_win_today"
+
+# Tabelle zuerst nach Gewinnername und dann nach Datum sortieren
+atp_regression <- atp_regression[order(atp_regression[ ,3], -as.numeric(atp_regression[ ,2])), ] 
+
+# neue Spalten erstellen
+atp_regression$sent_mean_win_yesterday <- rep(NA, dim(atp_regression)[1])
+atp_regression$sent_tweet_win_yesterday <- rep(NA, dim(atp_regression)[1])
+atp_regression$sent_insta_win_yesterday <- rep(NA, dim(atp_regression)[1])
+
+# Zeilen mit leeren Datumsfelder entfernen
+atp_regression <- atp_regression[!is.na(atp_regression$match_dat), ]
+
+# Neue Spalten mit den Sentiments vom Vortag erstellen
+for (i in 1:(dim(atp_regression)[1] -1)) {
+  if (atp_regression$winner_name[i] == atp_regression$winner_name[i+1]){
+    
+    if (atp_regression$match_dat[i] == atp_regression$match_dat[i+1] +1){
+     
+       atp_regression$sent_mean_win_yesterday[i] <- atp_regression$sent_mean_win_today[i + 1]
+    }
+  }
+}
+
+for (i in 1:(dim(atp_regression)[1] -1)) {
+  if (atp_regression$winner_name[i] == atp_regression$winner_name[i+1]){
+    
+    if (atp_regression$match_dat[i] == atp_regression$match_dat[i+1] +1){
+     
+       atp_regression$sent_tweet_win_yesterday[i] <- atp_regression$sent_tweet_win_today[i + 1]
+    }
+  }
+}
+
+for (i in 1:(dim(atp_regression)[1] -1)) {
+  if (atp_regression$winner_name[i] == atp_regression$winner_name[i+1]){
+    
+    if (atp_regression$match_dat[i] == atp_regression$match_dat[i+1] +1){
+     
+       atp_regression$sent_insta_win_yesterday[i] <- atp_regression$sent_insta_win_today[i + 1]
+    }
+  }
+}
+
+library(jtools)
+
+# Regression 1: Durchschnittssentiment vom Vortag vom Gewinner auf Winner First serve
+reg_1 =lm(atp_regression$`W_First Service % `~atp_regression$sent_mean_win_yesterday, use="complete.obs")
+summ(reg_1)
+
+par(mfrow=c(1,3)) # crei Graphen nebeneinander zu plotten
+
+plot_1 = plot(atp_regression$`W_First Service % `,atp_regression$sent_mean_win_yesterday, 
+              main = "Mean Sentiment Yesterday", ylab="Mean Sentiment Yesterday Winner", 
+              xlab = "Winner's First Service", col = "royalblue2", ylim=c(-3,4))
+
+
+abline(reg_1, col = "red")
+
+# Regression 2: Twittersentiment vom Vortag vom Gewinner auf Winner First serve
+reg_2 =lm(atp_regression$`W_First Service % `~atp_regression$sent_tweet_win_yesterday, use="complete.obs")
+summ(reg_2)
+plot_2 = plot(atp_regression$`W_First Service % `,atp_regression$sent_tweet_win_yesterday,  
+              main = "Twitter Sentiment Yesterday", ylab="Twitter Sentiment Yesterday Winner", 
+              xlab = "Winner's First Service", col = "royalblue2", ylim=c(-3,4))
+abline(reg_2, col = "red")
+
+# Regression 3: Instagramsentiment vom Vortag vom Gewinner auf Winner First serve
+reg_3 =lm(atp_regression$`W_First Service % `~atp_regression$sent_insta_win_yesterday, use="complete.obs")
+summary(reg_3)
+plot_3 = plot(atp_regression$`W_First Service % `,atp_regression$sent_insta_win_yesterday,  
+              main = "Instagram Sentiment Yesterday", 
+              ylab="Instagram Sentiment Yesterday Winner", 
+              xlab = "Winner's First Service", col = "royalblue2", ylim=c(-3,4))
+abline(reg_3, col = "red")
+
+# Log-Regression 1: log(Durchschnittssentiment) vom Vortag vom Gewinner auf Winner First serve
+atp_regression$log_win_first = log(atp_regression$`W_First Service % `)
+logreg_1 =lm(atp_regression$log_win_first~atp_regression$sent_mean_win_yesterday, use="complete.obs")
+summary(logreg_1)  
+hist(atp_regression$`W_First Service % `)
+
+export_summs(reg_1, reg_2, reg_3, logreg_1)
+```
+Wenn man die abhängige Variable logarithmiert, ändert sich das Regressionsergebnis nur sehr minim. Dies liegt unter anderem daran, dass die abhängige Variable bereits sehr normalverteilt ist.
+
+
+Nun wird dasselbe für die Verlierer gemacht.
+```{r}
+
+# Spalten umbenennen
+colnames(atp_regression)[which(names(atp_regression) == "sentiment_mean.loser")] <- "sent_mean_loser_today"
+colnames(atp_regression)[which(names(atp_regression) == "sentiment_twitter.loser")] <- "sent_tweet_loser_today"
+colnames(atp_regression)[which(names(atp_regression) == "sentiment_instagram.loser")] <- "sent_insta_loser_today"
+
+# Tabelle zuerst nach losername und dann nach Datum sortieren
+atp_regression <- atp_regression[order(atp_regression[ ,1], -as.numeric(atp_regression[ ,2])), ] 
+
+# neue Spalten erstellen
+atp_regression$sent_mean_loser_yesterday <- rep(NA, dim(atp_regression)[1])
+atp_regression$sent_tweet_loser_yesterday <- rep(NA, dim(atp_regression)[1])
+atp_regression$sent_insta_loser_yesterday <- rep(NA, dim(atp_regression)[1])
+
+# Zeilen mit leeren Verlierername entfernen
+atp_regression <- atp_regression[!is.na(atp_regression$loser_name), ]
+
+# Neue Spalten mit den Sentiments vom Vortag erstellen
+for (i in 1:(dim(atp_regression)[1] -1)) {
+  if (atp_regression$loser_name[i] == atp_regression$loser_name[i+1]){
+    
+    if (atp_regression$match_dat[i] == atp_regression$match_dat[i+1] +1){
+     
+       atp_regression$sent_mean_loser_yesterday[i] <- atp_regression$sent_mean_loser_today[i + 1]
+    }
+  }
+}
+
+for (i in 1:(dim(atp_regression)[1] -1)) {
+  if (atp_regression$loser_name[i] == atp_regression$loser_name[i+1]){
+    
+    if (atp_regression$match_dat[i] == atp_regression$match_dat[i+1] +1){
+     
+       atp_regression$sent_tweet_loser_yesterday[i] <- atp_regression$sent_tweet_loser_today[i + 1]
+    }
+  }
+}
+
+for (i in 1:(dim(atp_regression)[1] -1)) {
+  if (atp_regression$loser_name[i] == atp_regression$loser_name[i+1]){
+    
+    if (atp_regression$match_dat[i] == atp_regression$match_dat[i+1] +1){
+     
+       atp_regression$sent_insta_loser_yesterday[i] <- atp_regression$sent_insta_loser_today[i + 1]
+    }
+  }
+}
+
+
+```
+Im obigen Abschnitt wurde versucht eine Regression vom Sentiment vom Verlierer auf den First Serve vom Verlierer zu erstellen. Da der Fokus dieser Arbeit auf die Top 10 Tennisspieler liegt, enthält unser Datensatz zu wenig Information über die Sentimente der Verlierer. Somit ist keine Regression zwischen Sentiment Verlierer und 1st serve Verlierer möglich. 
+
+Nun erfolgt der gleiche Prozess mit den WTA Daten. 
+```{r warning=FALSE, message=FALSE}
+# nur relevante Spalten in neue Tabelle kopieren
+wta_regression <- wta_total[, c(1, 2, 3, 9, 31, 41, 50, 51, 52, 53, 54, 55)]
+players = unique(wta_regression$winner_name)
+
+# Spalten umbenennen
+colnames(wta_regression)[which(names(wta_regression) == "sentiment_mean.winner")] <- "sent_mean_win_today"
+colnames(wta_regression)[which(names(wta_regression) == "sentiment_twitter.winner")] <- "sent_tweet_win_today"
+colnames(wta_regression)[which(names(wta_regression) == "sentiment_instagram.winner")] <- "sent_insta_win_today"
+
+# Tabelle zuerst nach Gewinnername und dann nach Datum sortieren
+wta_regression <- wta_regression[order(wta_regression[ ,3], -as.numeric(wta_regression[ ,2])), ] 
+
+# neue Spalten erstellen
+wta_regression$sent_mean_win_yesterday <- rep(NA, dim(wta_regression)[1])
+wta_regression$sent_tweet_win_yesterday <- rep(NA, dim(wta_regression)[1])
+wta_regression$sent_insta_win_yesterday <- rep(NA, dim(wta_regression)[1])
+
+# Zeilen mit leeren Datumsfelder entfernen
+wta_regression <- wta_regression[!is.na(wta_regression$match_dat), ]
+
+# Neue Spalten mit den Sentiments vom Vortag erstellen
+for (i in 1:(dim(wta_regression)[1] -1)) {
+  if (wta_regression$winner_name[i] == wta_regression$winner_name[i+1]){
+    
+    if (wta_regression$match_dat[i] == wta_regression$match_dat[i+1] +1){
+     
+       wta_regression$sent_mean_win_yesterday[i] <- wta_regression$sent_mean_win_today[i + 1]
+    }
+  }
+}
+
+for (i in 1:(dim(wta_regression)[1] -1)) {
+  if (wta_regression$winner_name[i] == wta_regression$winner_name[i+1]){
+    
+    if (wta_regression$match_dat[i] == wta_regression$match_dat[i+1] +1){
+     
+       wta_regression$sent_tweet_win_yesterday[i] <- wta_regression$sent_tweet_win_today[i + 1]
+    }
+  }
+}
+
+for (i in 1:(dim(wta_regression)[1] -1)) {
+  if (wta_regression$winner_name[i] == wta_regression$winner_name[i+1]){
+    
+    if (wta_regression$match_dat[i] == wta_regression$match_dat[i+1] +1){
+     
+       wta_regression$sent_insta_win_yesterday[i] <- wta_regression$sent_insta_win_today[i + 1]
+    }
+  }
+}
+
+par(mfrow=c(1,3)) # drei Graphen nebeneinander zu plotten
+
+# Regression 5: Durchschnittssentiment vom Vortag von Gewinnerin auf Winner First serve
+reg_5 =lm(wta_regression$`W_First Service % `~ wta_regression$sent_mean_win_yesterday, use="complete.obs")
+summary(reg_5)
+plot_5 = plot(wta_regression$`W_First Service % `,wta_regression$sent_mean_win_yesterday, main = "Mean Sentiment Yesterday", ylab="Mean Sentiment Yesterday Winner", 
+              xlab = "Winner's First Service", col = "royalblue4", ylim=c(-3,4))
+abline(reg_5, col = "red")
+
+# Regression 6: Twittersentiment vom Vortag von Gewinnerin auf Winner First serve
+reg_6 =lm(wta_regression$`W_First Service % `~wta_regression$sent_tweet_win_yesterday, use="complete.obs")
+summary(reg_6)
+plot_6 = plot(wta_regression$`W_First Service % `,wta_regression$sent_tweet_win_yesterday, main = "Twitter Sentiment Yesterday", ylab="Twitter Sentiment Yesterday Winner", 
+              xlab = "Winner's First Service", col = "royalblue4", ylim=c(-3,4))
+abline(reg_6, col = "red")
+
+# Regression 7: Instagramsentiment vom Vortag von Gewinnerin auf Winner First serve
+reg_7 =lm(wta_regression$`W_First Service % `~wta_regression$sent_insta_win_yesterday, use="complete.obs")
+summary(reg_7)
+plot_7 = plot(wta_regression$`W_First Service % `,wta_regression$sent_insta_win_yesterday, main = "Instagram Sentiment Yesterday", ylab="Instagram Sentiment Yesterday Winner", 
+              xlab = "Winner's First Service", col = "royalblue4", ylim=c(-3,4))
+abline(reg_7, col = "red")
+
+export_summs(reg_5, reg_6, reg_7)
+```
+
