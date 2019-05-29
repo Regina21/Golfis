@@ -1,0 +1,214 @@
+---
+title: "Sentimentsanalyse Roger Federer Test"
+author: "Regina Arocha, Elias Böni, Kevin Elliott, Manuela Huber, Fabian Schmid"
+date: "31 Mai 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Beschreibung
+Es gibt unterschiedliche Methoden, um die Sentimentsanalyse durchzuführen. Je nach Methode werden die Sentimente der Tweets unterschiedlich bewertet. Dieses Skript testet unterschiedliche Methoden mit einer Teilmenge des Twitterdatensatzes von Roger Federer.
+
+## Vorbereitung
+
+```{r message=FALSE, warning = FALSE}
+# Working directory setzen
+setwd("~/01_Master/023_Technology & Market Intelligence/04_Daten")
+
+# Daten einlesen
+library(readxl)
+twitter <- read_excel(
+  "~/01_Master/023_Technology & Market Intelligence/04_Daten/twitter_complete_v2.xlsx")
+
+# Data Frame erstellen
+twitter <- as.data.frame(twitter)
+
+# Erste Spalte von twitter Datensatz entfernen
+twitter$...1= NULL
+
+# Datumsformat ändern
+twitter$date = as.Date(twitter$date, format="%Y-%m-%d")
+
+
+# Tweets entfernen vor 2017
+twitter = twitter[!grepl("2016", twitter$date),]
+
+```
+
+# Sentimentsanalyse
+## Vorbereitung Text
+```{r message=FALSE, warning= FALSE}
+library(tidytext)
+library(tidyverse)
+library(tm)
+library(dplyr)
+library(tidyr)
+
+rogerfederertwitter <- subset(twitter, username== "rogerfederer")
+rogerfederertwitter <- rogerfederertwitter[ !duplicated(rogerfederertwitter$tweet_English), ] # Duplikate entfernen
+
+rogerfederertwitter$tweet_English = gsub("[^A-Za-z]", " ", rogerfederertwitter$tweet_English) # Alphanumerische Zeichen entfernen
+rogerfederertwitter$tweet_English = gsub("http\\w+", " ", rogerfederertwitter$tweet_English) # Http Links entfernen
+rogerfederertwitter$tweet_English = gsub("rt", " ", rogerfederertwitter$tweet_English)
+rogerfederertwitter$tweet_English = gsub("@\\w+", " ", rogerfederertwitter$tweet_English)
+
+rogerfederertwitter$tweet_English = tolower(rogerfederertwitter$tweet_English) # Grossbuchstaben in Kleinbuchstaben umwandeln
+
+```
+
+## Option 1: 
+Die erste Option nutzt die library "sentimentr" (https://cran.r-project.org/web/packages/sentimentr/sentimentr.pdf). Diese Analyse basiert auf den Github Repository "https://github.com/trinker/sentimentr".
+```{r message=FALSE, warning=FALSE}
+library(sentimentr)
+emotion_roger1 = sentiment(rogerfederertwitter$tweet_English)
+
+rogerfederertwitter$sentiment1 = emotion_roger1$sentiment
+```
+
+## Option 2: 
+In einem zweiten Versuch wurde die library "syuzhet" ausgewählt. Dieses Package enthält vier Lexika. Das "afinn"-Lexikon wurde von Finn Arup Nielsen als AFINN WORD DATABASE entwickelt (siehe http://www2.imm.dtu.dk/pubdb/views/publication_details.php?id=6010). Dieses Lexikon wurde ausgewählt, weil es die Wörter auf einer Skala von -5 bis +5 bewertet. 
+
+```{r message=FALSE, warning=FALSE}
+library(syuzhet)
+
+emotion_roger2 = get_sentiment(rogerfederertwitter$tweet_English, method="afinn", language="english")
+rogerfederertwitter$sentiment2 = emotion_roger2
+```
+
+## Option 3: 
+Grundlage für die dritte Option war der Github Repository "https://cbail.github.io/SICSS_Dictionary-Based_Text_Analysis.html#sentiment-analysis". Auch in diesem Fall wird das Lexikon "afinn" verwendet. 
+```{r}
+
+rogerfederertwitter$created_at = paste(rogerfederertwitter$date, rogerfederertwitter$time)
+
+tidy_rf3<- rogerfederertwitter %>%
+  select(created_at,tweet_English) %>%
+  unnest_tokens("words", tweet_English)
+
+sentiment_rf3 <- (get_sentiment(tidy_rf3$words, method="afinn", language = "english"))
+tidy_rf3$sentiment = sentiment_rf3
+summary(tidy_rf3$sentiment)
+t = aggregate(tidy_rf3$sentiment, by = list(tidy_rf3$created_at), FUN = mean )
+colnames(t)= c("created_at", "sentiment3")
+rogerfederertwitter = merge(rogerfederertwitter, t, by="created_at")
+
+```
+
+## Option 4: 
+Die vierte Option basiert auf den Github Repository "https://github.com/Twitter-Sentiment-Analysis/R". 
+Für diese Option sind die zwei Textdateien "positive_words_1.txt" und "negative_words_1.txt" notwendig. 
+```{r warning=FALSE, message=FALSE}
+# Seltsame characters entfernen
+rogerfederertwitter$tweet_English <- sapply(rogerfederertwitter$tweet_English,function(row) iconv(row, "latin1", "ASCII", sub=""))
+rogerfederertwitter$tweet_English = gsub("(f|ht)tp(s?)://(.*)[.][a-z]+", "", rogerfederertwitter$tweet_English) # URL entfernen
+sample <- rogerfederertwitter$tweet_English
+
+# Lexikon hochladen
+pos.words = scan("C:/Users/aroch/OneDrive/Documents/01_Master/023_Technology & Market Intelligence/04_Daten/positive_words_1.txt", what="character", comment.char=";") # Speicherort einfügen
+neg.words = scan("C:/Users/aroch/OneDrive/Documents/01_Master/023_Technology & Market Intelligence/04_Daten/negative_words_1.txt", what="character", comment.char=";")
+
+
+#Wörter hinzufügen
+pos.words=c(pos.words, 'Congrats', 'prizes', 'prize', 'thanks', 'thnx', 'Grt', 'gr8', 'plz', 'trending', 'recovering', 'brainstorm', 'leader')
+neg.words = c(neg.words, 'Fight', 'fighting', 'wtf', 'arrest', 'no', 'not')
+
+# Funktion definieren
+score.sentiment = function(sentences, pos.words, neg.words, .progress='none')
+{
+  require(plyr)
+  require(stringr)
+  list=lapply(sentences, function(sentence, pos.words, neg.words)
+  {
+    sentence = gsub('[[:punct:]]',' ',sentence)
+    sentence = gsub('[[:cntrl:]]','',sentence)
+    sentence = gsub('\\d+','',sentence)  # Dezimalzahlen entfernen
+    sentence = gsub('\n','',sentence)    # Neue Absätze entfernen
+    sentence = tolower(sentence)
+    word.list = str_split(sentence, '\\s+')
+    words = unlist(word.list)  # Liste als character Vektor speichern
+    pos.matches = match(words, pos.words)
+    neg.matches = match(words, neg.words)
+    pos.matches = !is.na(pos.matches)
+    neg.matches = !is.na(neg.matches)
+    pp = sum(pos.matches)
+    nn = sum(neg.matches)
+    score = sum(pos.matches) - sum(neg.matches)
+    list1 = c(score, pp, nn)
+    return (list1)
+  }, pos.words, neg.words)
+  score_new = lapply(list, `[[`, 1)
+  pp1 = lapply(list, `[[`, 2)
+  nn1 = lapply(list, `[[`, 3)
+
+  # Drei neue Dataframes erstellen
+  scores.df = data.frame(score = score_new, text=sentences)
+  positive.df = data.frame(Positive = pp1, text=sentences)
+  negative.df = data.frame(Negative = nn1, text=sentences)
+
+  list_df = list(scores.df, positive.df, negative.df)
+  return(list_df)
+}
+
+
+# Dataframes zusammenführen
+result = score.sentiment(sample, pos.words, neg.words)
+
+library(reshape)
+
+test1 = result[[1]]
+test2 = result[[2]]
+test3 = result[[3]]
+
+test1$text = NULL
+test2$text = NULL
+test3$text = NULL
+
+q1 = test1[1,]
+q2 = test2[2,]
+q3 = test3[3,]
+
+qq1 = melt(q1 , var="score")
+qq2 = melt(q2 , var= "Positive")
+qq3 = melt(q3 , var="Negative")
+
+qq1["Score"] = NULL
+qq2['Positive'] = NULL
+qq3['Negative'] = NULL
+
+# Neues Dataframe erstellen
+table1 = data.frame(Text=result[[1]]$text, Score=qq1)
+table2 = data.frame(Text=result[[2]]$text, Score=qq2)
+table3 = data.frame(Text=result[[3]]$text, Score=qq3)
+
+# Dataframes zusammenführen
+table_final=data.frame(Text=table1$Text, Score=table1$Score.value, Positive=table2$value, Negative=table3$value)
+
+rules.new = cbind(c(table_final, rogerfederertwitter))
+
+rules.new = gsub('-','', rules.new)
+rogerfederertwitter$date = gsub('-','', rogerfederertwitter$date)
+rules.new = as.numeric(rules.new)
+rogerfederertwitter$date = as.numeric(rogerfederertwitter$date)
+rules.new = as.data.frame(rules.new)
+rules.new$minus_1 = (rules.new$rules.new- 1)
+rules.new$minus_2 = (rules.new$rules.new -2)
+rules.new$group = seq.int(nrow(rules.new))
+rules.new$group2 = seq.int(nrow(rules.new))
+
+# Sentimente in das ursprüngliche Roger Federer Dataframe einfügen
+rogerfederertwitter = merge(x= rogerfederertwitter, y = rules.new[,c("minus_1", "group")], by.x= "date", by.y = "minus_1", all.x=TRUE)
+rogerfederertwitter = merge(x= rogerfederertwitter, y = rules.new[,c("minus_2", "group2")], by.x= "date", by.y = "minus_2", all.x=TRUE)
+rogerfederertwitter = rogerfederertwitter[!with(rogerfederertwitter,is.na(rogerfederertwitter$group)&
+                                                  is.na(rogerfederertwitter$group2)),]
+
+# Durchschnitssentiment berechnen
+sentimentmean = rogerfederertwitter %>% group_by(group) %>% summarise_at(.vars=c("sentiment3"), .funs=mean)
+sentimentmean = as.data.frame(sentimentmean)
+rules.new = merge(x = rules.new,
+                  y = sentimentmean[,c("group", "sentiment3")], by = "group", all.x = TRUE)
+
+```
+
